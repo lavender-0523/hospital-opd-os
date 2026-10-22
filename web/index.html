@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospital OPD OS • Resource & Process Scheduling Simulator</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">🏥</div>
+        <div class="brand-titles">
+          <h1>Hospital OPD System • MediQueue OS</h1>
+          <p>COOS Mini Project: Process Scheduling, Aging, Mutex Synchronization & Concurrency</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-success badge-pulse">Mutex Engine Online</span>
+        <span class="badge">Concurrency Verified</span>
+        <span class="badge">Python 3.13 Ready</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="priority" id="tab-priority">
+        <span>🩺</span> Doctor Triage (Preemptive Priority + Aging)
+      </button>
+      <button class="tab-btn" data-tab="rr" id="tab-rr">
+        <span>🔬</span> Diagnostics Lab (Round Robin)
+      </button>
+      <button class="tab-btn" data-tab="concurrency" id="tab-concurrency">
+        <span>🏢</span> Reception Mutex & Concurrency
+      </button>
+      <button class="tab-btn" data-tab="compare" id="tab-compare">
+        <span>📊</span> Algorithm Benchmark Comparison
+      </button>
+    </nav>
+
+    <!-- KPI Summary Cards (Shared across views) -->
+    <section class="kpi-grid">
+      <div class="kpi-card" style="--kpi-accent: #ffffff;">
+        <div class="kpi-label">Average Waiting Time (AWT)</div>
+        <div class="kpi-value" id="kpi-awt">0.00</div>
+        <div class="kpi-subtext">Sum(WT) / Total Patients</div>
+      </div>
+      <div class="kpi-card" style="--kpi-accent: #d4d4d8;">
+        <div class="kpi-label">Average Turnaround (ATAT)</div>
+        <div class="kpi-value" id="kpi-atat">0.00</div>
+        <div class="kpi-subtext">Sum(TAT) / Total Patients</div>
+      </div>
+      <div class="kpi-card" style="--kpi-accent: #a1a1aa;">
+        <div class="kpi-label">Average Response Time (ART)</div>
+        <div class="kpi-value" id="kpi-art">0.00</div>
+        <div class="kpi-subtext">Time from arrival to first checkup</div>
+      </div>
+      <div class="kpi-card" style="--kpi-accent: #71717a;">
+        <div class="kpi-label">Doctor / Resource Utilization</div>
+        <div class="kpi-value" id="kpi-util">100.0%</div>
+        <div class="kpi-subtext" id="kpi-events-count">Optimal Resource Throughput</div>
+      </div>
+    </section>
+
+    <!-- THEATER VIEW (Priority & Round Robin) -->
+    <div id="theater-view">
+      <!-- Control Bar -->
+      <section class="control-bar">
+        <div class="controls-left">
+          <button class="btn btn-primary" id="btn-run-sim">
+            <span>⚡</span> Run Full Simulation
+          </button>
+          <button class="btn btn-secondary" id="btn-play">
+            <span>▶</span> Play
+          </button>
+          <button class="btn btn-secondary" id="btn-step">
+            <span>⏭</span> Step
+          </button>
+          <button class="btn btn-secondary" id="btn-reset">
+            <span>↺</span> Reset
+          </button>
+          
+          <div class="form-group-inline">
+            <label for="speed-select">Speed:</label>
+            <select class="form-select" id="speed-select">
+              <option value="1000">0.5x (Slow)</option>
+              <option value="600" selected>1.0x (Normal)</option>
+              <option value="300">2.0x (Fast)</option>
+              <option value="100">5.0x (Hyper)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="controls-right">
+          <!-- Algorithm specific parameter -->
+          <div class="form-group-inline" id="aging-group">
+            <label for="aging-input">Aging Threshold:</label>
+            <input type="number" class="form-input" id="aging-input" value="5" min="1" max="20" style="width: 70px;">
+          </div>
+          <div class="form-group-inline" id="tq-group" style="display: none;">
+            <label for="tq-input">Time Quantum (TQ):</label>
+            <input type="number" class="form-input" id="tq-input" value="2" min="1" max="10" style="width: 70px;">
+          </div>
+
+          <div class="form-group-inline">
+            <label for="preset-select">Batch Preset:</label>
+            <select class="form-select" id="preset-select">
+              <option value="default">Default OPD Batch (Coursework)</option>
+              <option value="emergency_inflow">Emergency Inflow Stress</option>
+              <option value="aging_demo">Starvation & Aging Showcase</option>
+            </select>
+          </div>
+
+          <button class="btn btn-secondary" id="btn-add-patient-modal">
+            <span>+</span> Add Patient
+          </button>
+        </div>
+      </section>
+
+      <!-- Simulation Theater: Doctor Room + Waiting Queue -->
+      <section class="simulation-theater">
+        <!-- Room A: The Doctor's Consultation Room (CPU) -->
+        <div class="room-card">
+          <div class="room-header">
+            <div class="room-title">
+              <span>🩺</span> Doctor's Office (Active Resource)
+            </div>
+            <span class="mono-cell" id="current-tick-display" style="color:#ffffff; font-size:0.85rem;">t = 0</span>
+          </div>
+          <div class="doctor-stage" id="doctor-stage">
+            <div class="doctor-avatar" id="doctor-avatar">🩺</div>
+            <div style="font-weight:700; font-size:1.05rem;" id="doctor-status-text">Dr. Mehta (OPD Lead)</div>
+            <div class="active-patient-badge cat-Normal" id="active-patient-badge">Waiting to Begin</div>
+          </div>
+        </div>
+
+        <!-- Room B: Ready Queue / Waiting Lounge -->
+        <div class="room-card">
+          <div class="room-header">
+            <div class="room-title">
+              <span>🛋️</span> Ready Queue (Waiting Room)
+            </div>
+            <span class="badge" style="font-size:0.75rem;">PCB Process Pool</span>
+          </div>
+          <div class="queue-list" id="queue-list">
+            <!-- Dynamically populated queue items -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Gantt Chart Section -->
+      <section class="gantt-section">
+        <div class="section-header">
+          <div class="section-title">
+            <span>📊</span> Execution Gantt Chart
+          </div>
+          <div style="font-size:0.8rem; color:var(--text-dim);">
+            Hover blocks for execution time windows
+          </div>
+        </div>
+        <div class="gantt-wrapper">
+          <div class="gantt-track" id="gantt-track">
+            <!-- Rendered Gantt Blocks -->
+          </div>
+          <div class="gantt-timeline-ruler" id="gantt-ruler">
+            <!-- Ruler Ticks -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Event Feed / Console -->
+      <section class="gantt-section" style="padding: 16px 20px;">
+        <div class="section-header" style="margin-bottom: 10px;">
+          <div class="section-title" style="font-size: 0.95rem;">
+            <span>⚡</span> Real-Time OS Event Log (Preemptions & Aging Events)
+          </div>
+        </div>
+        <div class="event-feed" id="event-feed">
+          <!-- Dynamic Event Lines -->
+        </div>
+      </section>
+
+      <!-- Patient Process Metrics Table -->
+      <section class="data-table-section">
+        <div class="section-header">
+          <div class="section-title">
+            <span>📋</span> Process Metrics Table (Process Control Block Dump)
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Token (PID)</th>
+                <th>Patient Name</th>
+                <th>Category (Priority)</th>
+                <th>Arrival Time (AT)</th>
+                <th>Burst Time (BT)</th>
+                <th>Completion Time (CT)</th>
+                <th>Turnaround (TAT)</th>
+                <th>Waiting Time (WT)</th>
+                <th>Response Time (RT)</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-table-body">
+              <!-- Dynamically populated table rows -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- CONCURRENCY PLAYGROUND VIEW (Mutex Lock) -->
+    <div id="concurrency-view" style="display: none;">
+      <div class="lock-status-panel">
+        <div>
+          <div style="font-size: 1.1rem; font-weight: 700; margin-bottom: 4px;">
+            Shared Critical Section: Global Token Dispenser
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">
+            Protects shared variable <code style="color:#ffffff;">token_counter</code> using Mutual Exclusion (Mutex Lock)
+          </p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <div class="form-group-inline">
+            <label for="toggle-mutex">Enforce Mutex Lock:</label>
+            <input type="checkbox" id="toggle-mutex" checked style="width: 18px; height: 18px; accent-color: #ffffff;">
+          </div>
+          <div id="mutex-lock-badge" class="lock-state-badge lock-unlocked">
+            🔓 MUTEX UNLOCKED [Resource Available]
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-bottom: 24px; padding: 18px; background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Current Global Shared Token Counter</div>
+        <div style="font-size: 3rem; font-weight: 800; font-family: var(--font-mono); color: #ffffff;" id="shared-token-display">#100</div>
+        <div style="margin-top: 10px; display: flex; justify-content: center; gap: 12px;">
+          <button class="btn btn-primary" id="btn-req-all">
+            <span>⚡</span> Simulate Concurrent Request Spike (All Desks)
+          </button>
+          <button class="btn btn-secondary" id="btn-reset-tokens">
+            <span>↺</span> Reset Counter to 100
+          </button>
+        </div>
+      </div>
+
+      <div class="concurrency-grid">
+        <!-- Reception Desk A -->
+        <div class="desk-card" id="desk-desk-a">
+          <div class="desk-icon">🪑</div>
+          <div style="font-weight: 700; font-size: 1.05rem;">Reception Desk A</div>
+          <p style="color: var(--text-dim); font-size: 0.78rem; margin: 4px 0 12px;">Thread 1 (Worker A)</p>
+          <div class="mono-cell desk-last-token" style="color: #ffffff; margin-bottom: 14px;">Token #---</div>
+          <button class="btn btn-secondary" id="btn-req-a">Issue Token (Desk A)</button>
+        </div>
+
+        <!-- Reception Desk B -->
+        <div class="desk-card" id="desk-desk-b">
+          <div class="desk-icon">🪑</div>
+          <div style="font-weight: 700; font-size: 1.05rem;">Reception Desk B</div>
+          <p style="color: var(--text-dim); font-size: 0.78rem; margin: 4px 0 12px;">Thread 2 (Worker B)</p>
+          <div class="mono-cell desk-last-token" style="color: #ffffff; margin-bottom: 14px;">Token #---</div>
+          <button class="btn btn-secondary" id="btn-req-b">Issue Token (Desk B)</button>
+        </div>
+
+        <!-- Reception Desk C -->
+        <div class="desk-card" id="desk-desk-c">
+          <div class="desk-icon">🪑</div>
+          <div style="font-weight: 700; font-size: 1.05rem;">Reception Desk C</div>
+          <p style="color: var(--text-dim); font-size: 0.78rem; margin: 4px 0 12px;">Thread 3 (Worker C)</p>
+          <div class="mono-cell desk-last-token" style="color: #ffffff; margin-bottom: 14px;">Token #---</div>
+          <button class="btn btn-secondary" id="btn-req-c">Issue Token (Desk C)</button>
+        </div>
+      </div>
+
+      <section class="gantt-section">
+        <div class="section-title" style="margin-bottom: 12px;">
+          <span>📝</span> Thread Concurrency & Mutex Execution Log
+        </div>
+        <div class="event-feed" id="concurrency-log" style="max-height: 180px;">
+          <div style="color:var(--text-dim);">Ready for concurrent requests. Click "Simulate Concurrent Request Spike".</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- COMPARISON VIEW -->
+    <div id="compare-view" style="display: none;">
+      <div class="section-header" style="margin-bottom: 16px;">
+        <div class="section-title">
+          <span>📊</span> Side-by-Side Algorithm Benchmark
+        </div>
+        <div style="font-size:0.85rem; color:var(--text-muted);">
+          Comparative analysis evaluated across the current batch of patients
+        </div>
+      </div>
+      <div class="comparison-grid" id="comparison-grid">
+        <!-- Rendered Algorithm Comparison Cards -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Add Patient Modal Form -->
+  <div class="modal-overlay" id="patient-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div style="font-weight: 700; font-size: 1.15rem;">Add New Patient to OPD Batch</div>
+      </div>
+      <div class="form-group">
+        <label for="input-token">Token ID (PID):</label>
+        <input type="number" class="form-input" id="input-token" value="105">
+      </div>
+      <div class="form-group">
+        <label for="input-name">Patient Name:</label>
+        <input type="text" class="form-input" id="input-name" placeholder="e.g., Rohit Sharma">
+      </div>
+      <div class="form-group">
+        <label for="input-age">Age:</label>
+        <input type="number" class="form-input" id="input-age" value="30">
+      </div>
+      <div class="form-group">
+        <label for="input-cat">Triage Category:</label>
+        <select class="form-select" id="input-cat">
+          <option value="Normal">Normal (Priority 3)</option>
+          <option value="Senior">Senior Citizen (Priority 2)</option>
+          <option value="Emergency">Emergency / Trauma (Priority 1)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="input-at">Arrival Time (AT):</label>
+        <input type="number" class="form-input" id="input-at" value="0" min="0">
+      </div>
+      <div class="form-group">
+        <label for="input-bt">Burst Time / Checkup Duration (BT):</label>
+        <input type="number" class="form-input" id="input-bt" value="4" min="1">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Add Patient</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Tooltip Element -->
+  <div class="tooltip-box" id="global-tooltip"></div>
+
+  <!-- Core JavaScript Engine -->
+  <script src="app.js"></script>
+</body>
+</html>
